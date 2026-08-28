@@ -11,6 +11,7 @@ import com.cakeshop.domain.member.service.MemberService;
 import com.cakeshop.domain.order.dto.form.customer.OrderGeneralCreateForm;
 import com.cakeshop.domain.order.dto.view.customer.OrderCreationResult;
 import com.cakeshop.domain.order.mapper.OrderMapper;
+import com.cakeshop.domain.order.service.checkout.GeneralOrderItemPreparationService;
 import com.cakeshop.domain.payment.mapper.PaymentMapper;
 import com.cakeshop.domain.payment.service.PaymentOrderPreparationCommandServiceImpl;
 import com.cakeshop.domain.product.dto.view.ProductSalesInfo;
@@ -42,6 +43,7 @@ import org.springframework.transaction.annotation.Transactional;
 @MybatisTest
 @Import({
         OrderService.class,
+        GeneralOrderItemPreparationService.class,
         MemberCouponQueryService.class,
         PaymentOrderPreparationCommandServiceImpl.class
 })

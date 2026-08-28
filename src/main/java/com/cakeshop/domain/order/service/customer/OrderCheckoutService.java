@@ -8,6 +8,8 @@ import com.cakeshop.domain.order.dto.view.customer.common.CheckoutOptionView;
 import com.cakeshop.domain.order.dto.view.customer.common.PickupDateView;
 import com.cakeshop.domain.order.dto.view.customer.common.PickupTimeView;
 import com.cakeshop.domain.order.error.OrderErrorCode;
+import com.cakeshop.domain.order.service.checkout.GeneralOrderItemPreparationService;
+import com.cakeshop.domain.order.service.checkout.GeneralOrderItemPreparationService.PreparedGeneralOrderItem;
 import com.cakeshop.domain.order.service.checkout.OrderAmountCalculator;
 import com.cakeshop.domain.order.service.checkout.OrderOptionValidator;
 import com.cakeshop.domain.order.service.checkout.OrderOptionValidator.ValidatedOption;
@@ -25,6 +27,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
@@ -49,6 +52,7 @@ public class OrderCheckoutService {
 
     private final ProductQueryService productQueryService;
     private final ProductService productService;
+    private final GeneralOrderItemPreparationService generalOrderItemPreparationService;
     private final OrderOptionValidator orderOptionValidator;
     private final StoreService storeService;
     private final Clock clock;
@@ -60,45 +64,21 @@ public class OrderCheckoutService {
             Integer quantity,
             List<Long> optionIds
     ) {
-        if (productId == null || productId <= 0) {
-            throw new BusinessException(OrderErrorCode.EMPTY_ORDER_ITEMS);
-        }
-        if (quantity == null || quantity <= 0) {
-            throw new BusinessException(OrderErrorCode.INVALID_QUANTITY);
-        }
-
-        // DB에 저장된 상품 정보 가져옴.
-        ProductSalesInfo product = productQueryService.getSalesInfo(productId);
-        // 주문 가능한 수량 검증
-        validateProduct(product, quantity);
-        // 주문 가능한 옵션 검증
-        List<ValidatedOption> validatedOptions = orderOptionValidator.validate(
+        PreparedGeneralOrderItem prepared = generalOrderItemPreparationService.prepare(
                 productId,
+                quantity,
                 optionIds
         );
 
-        OrderAmountCalculator.OrderAmounts amounts = OrderAmountCalculator.calculate(
-                product.basePrice(), quantity, validatedOptions
-        );
-
-        List<CheckoutOptionView> selectedOptions = validatedOptions.stream()
-                .map(option -> new CheckoutOptionView(
-                        option.optionId(),
-                        option.groupName(),
-                        option.optionName(),
-                        option.additionalPrice()
-                ))
-                .toList();
-
         return new GeneralOrderCheckoutView(
-                product.productId(),
-                product.productName(),
-                product.productType().getDisplayName(),
-                quantity,
-                selectedOptions,
-                amounts.productAmount(),
-                amounts.optionAmount(),
-                amounts.totalAmount(),
+                prepared.product().productId(),
+                prepared.product().productName(),
+                prepared.product().productType().getDisplayName(),
+                prepared.quantity(),
+                toCheckoutOptionViews(prepared.selectedOptions()),
+                prepared.amounts().productAmount(),
+                prepared.amounts().optionAmount(),
+                prepared.amounts().totalAmount(),
                 createPickupDates(storeService.getStoreView(), 0)
         );
     }
@@ -112,21 +92,28 @@ public class OrderCheckoutService {
         if (cartItems == null || cartItems.isEmpty()) {
             throw new BusinessException(OrderErrorCode.EMPTY_ORDER_ITEMS);
         }
-        List<GeneralOrderCheckoutView> itemCheckouts = cartItems.stream()
-                .map(item -> getGeneralCheckout(item.productId(), item.quantity(), item.optionIds()))
-                .toList();
-
-        List<CartOrderCheckoutView.CartOrderItemView> items = itemCheckouts.stream()
-                .map(item -> new CartOrderCheckoutView.CartOrderItemView(
-                        item.productName(), item.quantity(), item.selectedOptions(), item.totalAmount()
+        List<PreparedGeneralOrderItem> preparedItems = cartItems.stream()
+                .map(item -> generalOrderItemPreparationService.prepare(
+                        item.productId(),
+                        item.quantity(),
+                        item.optionIds()
                 ))
                 .toList();
-        java.math.BigDecimal productAmount = itemCheckouts.stream()
-                .map(GeneralOrderCheckoutView::productAmount)
-                .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
-        java.math.BigDecimal optionAmount = itemCheckouts.stream()
-                .map(GeneralOrderCheckoutView::optionAmount)
-                .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+
+        List<CartOrderCheckoutView.CartOrderItemView> items = preparedItems.stream()
+                .map(prepared -> new CartOrderCheckoutView.CartOrderItemView(
+                        prepared.product().productName(),
+                        prepared.quantity(),
+                        toCheckoutOptionViews(prepared.selectedOptions()),
+                        prepared.amounts().totalAmount()
+                ))
+                .toList();
+        BigDecimal productAmount = preparedItems.stream()
+                .map(prepared -> prepared.amounts().productAmount())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal optionAmount = preparedItems.stream()
+                .map(prepared -> prepared.amounts().optionAmount())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
         return new CartOrderCheckoutView(
                 items,
                 productAmount,
@@ -175,14 +162,7 @@ public class OrderCheckoutService {
                 product.productId(),
                 product.productName(),
                 product.preparationDays(),
-                selectedOptions.stream()
-                        .map(option -> new CheckoutOptionView(
-                                option.optionId(),
-                                option.groupName(),
-                                option.optionName(),
-                                option.additionalPrice()
-                        ))
-                        .toList(),
+                toCheckoutOptionViews(selectedOptions),
                 amounts.totalAmount(),
                 createPickupDates(storeService.getStoreView(), product.preparationDays())
         );
@@ -202,20 +182,17 @@ public class OrderCheckoutService {
             throw new BusinessException(ProductErrorCode.INSUFFICIENT_STOCK);
         }
         return productService.getPublicOptionGroups(productId);
-}
+    }
 
-    private void validateProduct(ProductSalesInfo product, int quantity) {
-        if (product.productType() != ProductType.GENERAL) {
-            throw new BusinessException(OrderErrorCode.GENERAL_PRODUCT_REQUIRED);
-        }
-        if (product.basePrice() == null || product.basePrice().signum() < 0) {
-            throw new BusinessException(CommonErrorCode.INTERNAL_ERROR);
-        }
-        if (!product.available()
-                || product.stockQuantity() != null
-                && product.stockQuantity() < quantity) {
-            throw new BusinessException(ProductErrorCode.INSUFFICIENT_STOCK);
-        }
+    private List<CheckoutOptionView> toCheckoutOptionViews(List<ValidatedOption> options) {
+        return options.stream()
+                .map(option -> new CheckoutOptionView(
+                        option.optionId(),
+                        option.groupName(),
+                        option.optionName(),
+                        option.additionalPrice()
+                ))
+                .toList();
     }
 
     private List<PickupDateView> createPickupDates(StoreView store, int preparationDays) {

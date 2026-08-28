@@ -7,6 +7,7 @@ import com.cakeshop.domain.member.service.MemberCouponQueryService;
 import com.cakeshop.domain.order.entity.OrderStatus;
 import com.cakeshop.domain.order.entity.OrderType;
 import com.cakeshop.domain.order.mapper.OrderMapper;
+import com.cakeshop.domain.order.service.checkout.GeneralOrderItemPreparationService;
 import com.cakeshop.domain.order.service.checkout.OrderOptionValidator;
 import com.cakeshop.domain.order.service.checkout.PickupAvailabilityPolicy;
 import com.cakeshop.domain.order.service.payment.OrderExpirationService;
@@ -54,6 +55,7 @@ import static org.mockito.Mockito.when;
         ProductStockService.class,
         OrderPaymentCommandService.class,
         OrderService.class,
+        GeneralOrderItemPreparationService.class,
         PickupAvailabilityPolicy.class,
         OrderExpirationService.class
 })

@@ -1,7 +1,11 @@
 package com.cakeshop.domain.order.service.customer;
 
+import com.cakeshop.domain.cart.dto.view.CartOrderItemView;
+import com.cakeshop.domain.order.dto.view.customer.CartOrderCheckoutView;
 import com.cakeshop.domain.order.dto.view.customer.GeneralOrderCheckoutView;
 import com.cakeshop.domain.order.dto.view.customer.common.PickupTimeView;
+import com.cakeshop.domain.order.error.OrderErrorCode;
+import com.cakeshop.domain.order.service.checkout.GeneralOrderItemPreparationService;
 import com.cakeshop.domain.order.service.checkout.OrderOptionValidator;
 import com.cakeshop.domain.order.service.customer.OrderCheckoutService;
 import com.cakeshop.domain.order.service.checkout.OrderOptionValidator.ValidatedOption;
@@ -12,6 +16,7 @@ import com.cakeshop.domain.product.service.ProductService;
 import com.cakeshop.domain.store.dto.view.StoreView;
 import com.cakeshop.domain.store.entity.StoreHoliday;
 import com.cakeshop.domain.store.service.StoreService;
+import com.cakeshop.global.error.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -29,6 +34,9 @@ import java.util.List;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -61,6 +69,10 @@ class OrderCheckoutServiceTests {
         orderCheckoutService = new OrderCheckoutService(
                 productQueryService,
                 productService,
+                new GeneralOrderItemPreparationService(
+                        productQueryService,
+                        orderOptionValidator
+                ),
                 orderOptionValidator,
                 storeService,
                 FIXED_CLOCK
@@ -112,6 +124,95 @@ class OrderCheckoutServiceTests {
         assertThat(checkout.pickupDates())
                 .noneMatch(date -> date.date().getDayOfWeek() == DayOfWeek.TUESDAY)
                 .noneMatch(date -> date.date().equals(LocalDate.of(2026, 8, 5)));
+    }
+
+    @Test
+    void getGeneralCheckout_unlimitedStockQuantityOverLimit_rejectsCheckout() {
+        when(productQueryService.getSalesInfo(1L)).thenReturn(
+                new ProductSalesInfo(
+                        1L,
+                        "딸기 생크림 케이크",
+                        ProductType.GENERAL,
+                        0,
+                        true,
+                        BigDecimal.valueOf(35_000),
+                        null
+                )
+        );
+
+        assertThatThrownBy(() -> orderCheckoutService.getGeneralCheckout(
+                1L,
+                11,
+                List.of()
+        )).isInstanceOfSatisfying(
+                BusinessException.class,
+                error -> assertThat(error.getErrorCode())
+                        .isEqualTo(OrderErrorCode.INVALID_QUANTITY)
+        );
+    }
+
+    @Test
+    void getGeneralCheckout_zeroTotalAmount_rejectsCheckout() {
+        when(productQueryService.getSalesInfo(1L)).thenReturn(
+                new ProductSalesInfo(
+                        1L,
+                        "무료 케이크",
+                        ProductType.GENERAL,
+                        0,
+                        true,
+                        BigDecimal.ZERO,
+                        10
+                )
+        );
+        when(orderOptionValidator.validate(1L, List.of())).thenReturn(List.of());
+
+        assertThatThrownBy(() -> orderCheckoutService.getGeneralCheckout(
+                1L,
+                1,
+                List.of()
+        )).isInstanceOfSatisfying(
+                BusinessException.class,
+                error -> assertThat(error.getErrorCode())
+                        .isEqualTo(OrderErrorCode.INVALID_ORDER_AMOUNT)
+        );
+    }
+
+    @Test
+    void getCartCheckout_multipleItems_loadsStoreOnce() {
+        when(productQueryService.getSalesInfo(1L)).thenReturn(
+                new ProductSalesInfo(
+                        1L,
+                        "딸기 생크림 케이크",
+                        ProductType.GENERAL,
+                        0,
+                        true,
+                        BigDecimal.valueOf(35_000),
+                        10
+                )
+        );
+        when(productQueryService.getSalesInfo(2L)).thenReturn(
+                new ProductSalesInfo(
+                        2L,
+                        "초코 생크림 케이크",
+                        ProductType.GENERAL,
+                        0,
+                        true,
+                        BigDecimal.valueOf(40_000),
+                        10
+                )
+        );
+        when(orderOptionValidator.validate(1L, List.of())).thenReturn(List.of());
+        when(orderOptionValidator.validate(2L, List.of())).thenReturn(List.of());
+        when(storeService.getStoreView()).thenReturn(storeView());
+
+        CartOrderCheckoutView checkout = orderCheckoutService.getCartCheckout(List.of(
+                new CartOrderItemView(11L, 1L, 1, null, List.of()),
+                new CartOrderItemView(12L, 2L, 2, null, List.of())
+        ));
+
+        assertThat(checkout.totalAmount()).isEqualByComparingTo("115000");
+        assertThat(checkout.items()).hasSize(2);
+        verify(storeService, times(1)).getStoreView();
     }
 
     @Test
