@@ -17,6 +17,7 @@ import com.cakeshop.domain.order.error.OrderErrorCode;
 import com.cakeshop.domain.order.mapper.OrderCartMapper;
 import com.cakeshop.domain.order.dto.view.OrderCartItemLink;
 import com.cakeshop.domain.order.mapper.OrderMapper;
+import com.cakeshop.domain.order.service.checkout.GeneralOrderItemPreparationService;
 import com.cakeshop.domain.order.service.checkout.OrderOptionValidator;
 import com.cakeshop.domain.order.service.checkout.OrderOptionValidator.ValidatedOption;
 import com.cakeshop.domain.order.service.checkout.PickupAvailabilityPolicy;
@@ -111,8 +112,10 @@ class OrderServiceTests {
         lenient().when(memberCouponQueryService.lockActiveCouponIssuableMember(anyLong())).thenReturn(true);
         orderService = new OrderService(
                 new PickupAvailabilityPolicy(storeService),
-                productQueryService,
-                orderOptionValidator,
+                new GeneralOrderItemPreparationService(
+                        productQueryService,
+                        orderOptionValidator
+                ),
                 orderMapper,
                 paymentPreparationService,
                 memberService,

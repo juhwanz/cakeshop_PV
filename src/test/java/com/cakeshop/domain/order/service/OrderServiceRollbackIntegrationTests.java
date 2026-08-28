@@ -5,6 +5,7 @@ import com.cakeshop.domain.cart.service.CartOrderQueryService;
 import com.cakeshop.domain.member.service.MemberService;
 import com.cakeshop.domain.member.service.MemberCouponQueryService;
 import com.cakeshop.domain.order.dto.form.customer.OrderGeneralCreateForm;
+import com.cakeshop.domain.order.service.checkout.GeneralOrderItemPreparationService;
 import com.cakeshop.domain.order.service.checkout.OrderOptionValidator;
 import com.cakeshop.domain.order.service.checkout.PickupAvailabilityPolicy;
 import com.cakeshop.domain.payment.error.PaymentErrorCode;
@@ -51,6 +52,7 @@ import static org.mockito.Mockito.when;
 @MybatisTest
 @Import({
         OrderService.class,
+        GeneralOrderItemPreparationService.class,
         PickupAvailabilityPolicy.class,
         OrderOptionValidator.class
 })

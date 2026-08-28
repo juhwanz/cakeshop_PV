@@ -18,15 +18,12 @@ import com.cakeshop.domain.order.mapper.OrderMapper;
 import com.cakeshop.domain.order.mapper.OrderCartMapper;
 import com.cakeshop.domain.order.dto.view.OrderCartItemLink;
 import com.cakeshop.domain.order.dto.view.customer.OrderCreationResult;
-import com.cakeshop.domain.order.service.checkout.OrderAmountCalculator;
-import com.cakeshop.domain.order.service.checkout.OrderOptionValidator;
+import com.cakeshop.domain.order.service.checkout.GeneralOrderItemPreparationService;
+import com.cakeshop.domain.order.service.checkout.GeneralOrderItemPreparationService.PreparedGeneralOrderItem;
 import com.cakeshop.domain.order.service.checkout.OrderOptionValidator.ValidatedOption;
 import com.cakeshop.domain.order.service.checkout.PickupAvailabilityPolicy;
 import com.cakeshop.domain.payment.service.PaymentOrderPreparationCommandService;
 import com.cakeshop.domain.product.dto.view.ProductSalesInfo;
-import com.cakeshop.domain.product.entity.ProductType;
-import com.cakeshop.domain.product.error.ProductErrorCode;
-import com.cakeshop.domain.product.service.ProductQueryService;
 import com.cakeshop.global.error.BusinessException;
 import com.cakeshop.global.error.CommonErrorCode;
 import lombok.RequiredArgsConstructor;
@@ -45,12 +42,10 @@ import java.util.UUID;
 public class OrderService {
 
     private static final BigDecimal ZERO = BigDecimal.ZERO;
-    private static final int MAX_UNLIMITED_STOCK_QUANTITY = 10;
     private static final long PAYMENT_EXPIRATION_MINUTES = 10L;
 
     private final PickupAvailabilityPolicy pickupAvailabilityPolicy;
-    private final ProductQueryService productQueryService;
-    private final OrderOptionValidator orderOptionValidator;
+    private final GeneralOrderItemPreparationService generalOrderItemPreparationService;
     private final OrderMapper orderMapper;
     private final PaymentOrderPreparationCommandService paymentOrderPreparationCommandService;
     private final MemberService memberService;
@@ -319,43 +314,18 @@ public class OrderService {
 
     /** 현재 상품·옵션 정보를 검증하고 주문 항목 스냅샷에 저장할 값을 계산한다. */
     private PreparedOrderItem prepareItem(OrderGeneralCreateForm form) {
-        if (form.getQuantity() == null || form.getQuantity() <= 0) {
-            throw new BusinessException(OrderErrorCode.INVALID_QUANTITY);
-        }
-
-        ProductSalesInfo product =
-                productQueryService.getSalesInfo(form.getProductId());
-        if (product.productType() != ProductType.GENERAL) {
-            throw new BusinessException(OrderErrorCode.GENERAL_PRODUCT_REQUIRED);
-        }
-        if (product.stockQuantity() == null
-                && form.getQuantity() > MAX_UNLIMITED_STOCK_QUANTITY) {
-            throw new BusinessException(OrderErrorCode.INVALID_QUANTITY);
-        }
-        if (product.basePrice() == null || product.basePrice().signum() < 0) {
-            throw new BusinessException(CommonErrorCode.INTERNAL_ERROR);
-        }
-        validateStock(product, form.getQuantity());
-
-        List<ValidatedOption> selectedOptions =
-                orderOptionValidator.validate(
-                        product.productId(),
-                        form.getOptionIds()
-                );
-
-        OrderAmountCalculator.OrderAmounts amounts = OrderAmountCalculator.calculate(
-                product.basePrice(), form.getQuantity(), selectedOptions
+        PreparedGeneralOrderItem prepared = generalOrderItemPreparationService.prepare(
+                form.getProductId(),
+                form.getQuantity(),
+                form.getOptionIds()
         );
-        if (amounts.totalAmount().signum() <= 0) {
-            throw new BusinessException(OrderErrorCode.INVALID_ORDER_AMOUNT);
-        }
 
         return new PreparedOrderItem(
-                product,
-                form.getQuantity(),
-                selectedOptions,
-                amounts.unitOptionAmount(),
-                amounts.totalAmount(),
+                prepared.product(),
+                prepared.quantity(),
+                prepared.selectedOptions(),
+                prepared.amounts().unitOptionAmount(),
+                prepared.amounts().totalAmount(),
                 null
         );
     }
@@ -374,19 +344,6 @@ public class OrderService {
                 preparedItem.totalAmount(),
                 item.requirements()
         );
-    }
-
-    /**
-     * 주문 생성 시점의 재고만 사전 확인한다.
-     *
-     * <p>실제 재고 차감은 결제 성공 처리에서 원자적으로 수행해야 한다.</p>
-     */
-    private void validateStock(ProductSalesInfo product, int quantity) {
-        Integer stockQuantity = product.stockQuantity();
-        if (!product.available()
-                || stockQuantity != null && stockQuantity < quantity) {
-            throw new BusinessException(ProductErrorCode.INSUFFICIENT_STOCK);
-        }
     }
 
     /** 결제 대기 상태와 결제 만료 시각이 설정된 일반 주문을 구성한다. */

@@ -11,6 +11,7 @@ import com.cakeshop.domain.order.entity.OrderItemOption;
 import com.cakeshop.domain.order.entity.OrderStatus;
 import com.cakeshop.domain.order.entity.OrderType;
 import com.cakeshop.domain.order.mapper.OrderMapper;
+import com.cakeshop.domain.order.service.checkout.GeneralOrderItemPreparationService;
 import com.cakeshop.domain.order.service.checkout.OrderOptionValidator;
 import com.cakeshop.domain.order.service.checkout.PickupAvailabilityPolicy;
 import com.cakeshop.domain.payment.entity.Payment;
@@ -53,6 +54,7 @@ import static org.mockito.Mockito.when;
 @MybatisTest
 @Import({
         OrderService.class,
+        GeneralOrderItemPreparationService.class,
         PickupAvailabilityPolicy.class,
         OrderOptionValidator.class,
         PaymentOrderPreparationCommandServiceImpl.class
