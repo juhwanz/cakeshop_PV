@@ -115,4 +115,4 @@
 - Toss 경계: [`TossPaymentClient`](../src/main/java/com/cakeshop/domain/payment/infra/TossPaymentClient.java)
 - 결제 복구: [`PaymentRecoveryScheduler`](../src/main/java/com/cakeshop/domain/payment/service/PaymentRecoveryScheduler.java)
 
-현재 로컬 실행에서 Toss와 다른 외부 서비스를 격리하는 방법은 [환경·보안 가이드](security-environments.md)에 정리했습니다. 이 개편의 요구사항과 구현 범위는 개인 저장소 [Issue #3](https://github.com/juhwanz/cakeshop_PV/issues/3)에서 확인할 수 있습니다.
+전체 컴포넌트와 트랜잭션 경계는 [아키텍처 개요](architecture-overview.md), 현재 로컬 실행에서 Toss와 다른 외부 서비스를 격리하는 방법은 [환경·보안 가이드](security-environments.md)에 정리했습니다. 이 개편의 요구사항과 구현 범위는 개인 저장소 [Issue #3](https://github.com/juhwanz/cakeshop_PV/issues/3)에서 확인할 수 있습니다.

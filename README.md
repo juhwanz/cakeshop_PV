@@ -30,6 +30,36 @@
 
 `team-project-final`은 팀 프로젝트 종료 당시의 기준점입니다. 태그 이후 작업은 팀 성과로 섞어 표현하지 않으며, 실제 Issue·Commit·Test로 확인할 수 있는 내용만 기록합니다.
 
+## 아키텍처
+
+cakeshop은 14개 업무 도메인을 한 애플리케이션에 구성한 서버 렌더링 방식의 모듈형 모놀리스입니다. 각 도메인은 수직 슬라이스로 응집하고, 결제처럼 외부 시스템과 내부 상태가 함께 움직이는 흐름은 조정 계층과 트랜잭션 계층을 분리했습니다.
+
+```mermaid
+flowchart LR
+    Browser[고객·관리자 브라우저] --> Security[Spring Security]
+    Security --> Controller[Spring MVC Controller]
+    Controller --> Service[Domain Service]
+    Service --> Mapper[MyBatis Mapper]
+    Mapper --> DB[(MariaDB)]
+
+    Service --> Contract[Public Query / Command Service]
+    Contract --> Other[Other Domain Service]
+
+    Scheduler[만료·복구 Scheduler] --> Service
+    Facade[PaymentFacade] --> Toss[Toss Payments]
+    Facade --> Service
+    Service --> Event[Transactional Event]
+    Event --> Listener[AFTER_COMMIT Listener]
+    Listener --> FollowUp[장바구니 정리·알림]
+```
+
+- [모듈형 모놀리스와 수직 슬라이스](docs/architecture-overview.md#모듈형-모놀리스와-수직-슬라이스): 기능 응집도와 팀 담당 경계를 코드 구조에 반영
+- [도메인 간 공개 계약](docs/architecture-overview.md#도메인-간-공개-계약): 다른 도메인의 테이블·Mapper·Entity 대신 최소 Query/Command 계약 사용
+- [외부 PG와 내부 트랜잭션 분리](docs/architecture-overview.md#외부-pg와-내부-트랜잭션-분리): 긴 DB 트랜잭션 대신 승인 이후 실패를 명시적으로 복구
+- [영속 보상과 멱등 복구](docs/architecture-overview.md#영속-보상과-멱등-복구): 취소 의도를 먼저 저장하고 같은 멱등키로 재처리
+
+전체 컴포넌트 경계, 결제 시퀀스, 선택한 대안과 남은 한계는 [아키텍처 개요](docs/architecture-overview.md)에 정리했습니다.
+
 ## 주문·결제에서 해결한 문제
 
 ### 1. 승인 중 만료되는 결제의 일관성
@@ -52,14 +82,14 @@ Toss 승인 요청 직전에는 유효했지만 응답 도착 시 만료된 주�
 
 설계 선택, 실패 시나리오와 당시 검증 범위는 [주문·결제 문제 해결 기록](docs/order-payment-case-study.md)에 정리했습니다.
 
-## 설계와 검증
+## 검증 전략
 
-- 도메인별 수직 슬라이스와 `Controller → Service → Mapper → DB` 의존 방향
-- 다른 도메인의 테이블·Mapper·Entity 대신 공개 Service 계약으로 협업
 - 브라우저 금액을 신뢰하지 않고 서버 데이터로 주문 금액 재계산
 - Order와 Payment 상태를 분리하고 재고·결제·주문 전이를 단일 트랜잭션으로 확정
-- 외부 결제 승인 뒤 내부 실패에 대비한 영속 보상 요청과 멱등 복구
-- JUnit, Mockito, MockMvc와 MariaDB Testcontainers를 사용한 단위·통합·경합 검증
+- Service 단위 테스트로 상태 전이와 실패 분기 검증
+- MockMvc로 인증·인가와 HTTP 경계 검증
+- MariaDB Testcontainers로 트랜잭션 rollback, 행 잠금과 경합 검증
+- MockWebServer로 Toss 요청·응답과 재시도 경계 검증
 
 ```bash
 ./gradlew unitTest      # MariaDB Testcontainers 제외
@@ -101,6 +131,7 @@ Toss 테스트 API는 `local,toss-test`에서만 명시적으로 활성화되며
 | 독자 | 문서 |
 |---|---|
 | 프로젝트를 실행하려는 사람 | [로컬 실행 가이드](docs/getting-started.md) |
+| 전체 구조와 설계 선택을 확인하는 사람 | [아키텍처 개요](docs/architecture-overview.md) |
 | 주문·결제 설계를 평가하려는 사람 | [주문·결제 문제 해결 기록](docs/order-payment-case-study.md) |
 | 프로필·외부 연동 경계를 확인하는 사람 | [환경·보안 가이드](docs/security-environments.md) |
 | 구조와 협업 규칙을 확인하는 개발자 | [코드 컨벤션](docs/conventions.md) · [PR 가이드](docs/pull-request.md) |
