@@ -8,6 +8,7 @@ import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Profile;
 import org.springframework.mail.MailException;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
@@ -15,6 +16,7 @@ import org.springframework.stereotype.Service;
 
 /** Spring Mail의 SMTP 연결로 회원 인증번호를 발송한다. */
 @Service
+@Profile("smtp")
 public class SmtpEmailSender implements EmailSender {
 
     private final JavaMailSender mailSender;

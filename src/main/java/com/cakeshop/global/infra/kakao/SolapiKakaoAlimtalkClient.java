@@ -37,7 +37,7 @@ public class SolapiKakaoAlimtalkClient {
 
     private final RestTemplate restTemplate; // HTTP 요청 전송용 객체
 
-    @Value("${app.kakao.alimtalk.enabled:true}")
+    @Value("${app.kakao.alimtalk.enabled:false}")
     private boolean enabled;
 
     @Value("${app.kakao.alimtalk.api-key:}")

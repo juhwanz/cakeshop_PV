@@ -1,8 +1,6 @@
 spring:
   config:
     import: optional:file:.env[.properties]
-  profiles:
-    default: rds,s3,oauth
   application:
     name: cakeshop
   thymeleaf:
@@ -22,19 +20,6 @@ spring:
     # 파일명의 타임스탬프는 '만든 시각'이라 머지 순서와 다를 수 있다.
     # 늦게 머지된 낮은 버전도 받아들이지 않으면 validate가 실패한다.
     out-of-order: true
-  mail:
-    host: ${MAIL_HOST:smtp.gmail.com}
-    port: ${MAIL_PORT:587}
-    username: ${MAIL_USERNAME:}
-    password: ${MAIL_PASSWORD:}
-    default-encoding: UTF-8
-    properties:
-      mail.smtp.auth: true
-      mail.smtp.starttls.enable: true
-      mail.smtp.connectiontimeout: 5000
-      mail.smtp.timeout: 5000
-      mail.smtp.writetimeout: 5000
-
 server:
   tomcat:
     # 파일 input이 있는 폼은 전체가 multipart라 텍스트·체크박스·CSRF까지 모두 part로 계산된다.
@@ -47,7 +32,7 @@ mybatis:
   configuration:
     map-underscore-to-camel-case: true
 
-# 기본값은 health 하나만 연다. 지표 노출은 local 프로필에서만 켠다 —
+# 기본값은 health 하나만 연다. 지표 노출을 추가해도 익명 공개하지 않는다 —
 # /actuator/prometheus 응답에는 모든 엔드포인트의 URI 패턴과 커넥션 풀·JVM 내부 상태가
 # 들어 있어 배포 환경에서 익명에게 공개하면 AGENTS.md 의 '내부 경로 비노출'에 걸린다.
 management:
@@ -70,18 +55,8 @@ app:
     metrics-public: false
   kakao:
     alimtalk:
-      enabled: ${SOLAPI_ENABLED:false}
-      # 솔라피 API Key & API Secret (환경변수로 주입)
-      api-key: ${SOLAPI_API_KEY:}
-      api-secret: ${SOLAPI_API_SECRET:}
-      # 발신자 등록 휴대폰 번호
-      sender-phone: ${SOLAPI_SENDER_PHONE:01000000000}
-      # 카카오톡 채널 발신프로필 ID (선택 사항)
-      pf-id: ${KAKAO_ALIMTALK_PF_ID:}
-  member:
-    mail:
-      from-address: ${MAIL_FROM_ADDRESS:${MAIL_USERNAME:}}
-      from-name: ${MAIL_FROM_NAME:SweetHan}
+      # 실제 발송은 sms 프로필이 명시적으로 활성화한 경우에만 허용한다.
+      enabled: false
   order:
     expiration:
       fixed-delay-ms: ${ORDER_EXPIRATION_FIXED_DELAY_MS:60000}
@@ -95,9 +70,10 @@ app:
   payment:
     toss:
       base-url: https://api.tosspayments.com
-      # API 키는 로컬 .env 또는 배포 환경변수로만 주입하며 저장소에 커밋하지 않는다.
-      client-key: ${TOSS_CLIENT_KEY:}
-      secret-key: ${TOSS_SECRET_KEY:}
+      # 실제 호출과 키 주입은 toss-test 프로필이 명시적으로 활성화한다.
+      enabled: false
+      client-key: ""
+      secret-key: ""
       connect-timeout: ${TOSS_CONNECT_TIMEOUT:3s}
       read-timeout: ${TOSS_READ_TIMEOUT:5s}
     recovery:
@@ -106,7 +82,59 @@ app:
       batch-size: ${PAYMENT_RECOVERY_BATCH_SIZE:50}
 
 ---
-# Google/Kakao OAuth login. Team members configure both providers in .env.
+# Toss 테스트 API 호출. RuntimeProfilePolicy가 테스트 키 쌍과 local 조합을 검증한다.
+spring:
+  config:
+    activate:
+      on-profile: toss-test
+app:
+  payment:
+    toss:
+      enabled: true
+      client-key: ${TOSS_CLIENT_KEY:}
+      secret-key: ${TOSS_SECRET_KEY:}
+
+---
+# 실제 SMTP 발송. local과의 조합은 RuntimeProfilePolicy가 거부한다.
+spring:
+  config:
+    activate:
+      on-profile: smtp
+  mail:
+    host: ${MAIL_HOST}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME}
+    password: ${MAIL_PASSWORD}
+    default-encoding: UTF-8
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 5000
+      mail.smtp.writetimeout: 5000
+app:
+  member:
+    mail:
+      from-address: ${MAIL_FROM_ADDRESS:${MAIL_USERNAME}}
+      from-name: ${MAIL_FROM_NAME:SweetHan}
+
+---
+# 실제 Solapi SMS 발송. local과의 조합은 RuntimeProfilePolicy가 거부한다.
+spring:
+  config:
+    activate:
+      on-profile: sms
+app:
+  kakao:
+    alimtalk:
+      enabled: true
+      api-key: ${SOLAPI_API_KEY}
+      api-secret: ${SOLAPI_API_SECRET}
+      sender-phone: ${SOLAPI_SENDER_PHONE}
+      pf-id: ${KAKAO_ALIMTALK_PF_ID:}
+
+---
+# Google/Kakao OAuth login. local과의 조합은 RuntimeProfilePolicy가 거부한다.
 spring:
   config:
     activate:
@@ -140,7 +168,7 @@ app:
       kakao-enabled: true
 
 ---
-# S3 파일 저장소: DB 프로필(local/rds)과 조합해서 사용한다.
+# S3 파일 저장소. local과의 조합은 RuntimeProfilePolicy가 거부한다.
 spring:
   config:
     activate:
@@ -182,19 +210,16 @@ spring:
     url: "jdbc:mariadb://${LOCAL_DB_HOST:localhost}:${LOCAL_DB_PORT}/${LOCAL_DB_DATABASE}?connectionTimeZone=+09:00&forceConnectionTimeZoneToSession=true"
     username: ${LOCAL_DB_USERNAME}
     password: ${LOCAL_DB_PASSWORD}
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health, info, metrics, prometheus
 
+---
+# 외부 호출과 예약 작업 없이 일부 고객 조회 화면을 확인하는 local 전용 프로필.
+spring:
+  config:
+    activate:
+      on-profile: preview
 app:
   mockup:
-    # 화면 선이관 기간에만 조회 화면을 로그인 없이 확인한다. rds에서는 false다.
     public-preview: true
-  monitoring:
-    # 로컬 측정용. 수집기는 로그인하지 않으므로 인증 없이 연다.
-    metrics-public: true
 
 ---
 # 공용 AWS RDS: 프로젝트 루트의 .env에서 접속 정보를 읽는다.
