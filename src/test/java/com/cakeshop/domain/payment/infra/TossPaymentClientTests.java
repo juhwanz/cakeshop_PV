@@ -114,6 +114,7 @@ class TossPaymentClientTests {
     @Test
     void constructor_nonPositiveTimeout_rejectsConfiguration() {
         assertThatThrownBy(() -> new TossPaymentClient(
+                true,
                 BASE_URL,
                 SECRET_KEY,
                 Duration.ZERO,
@@ -129,6 +130,24 @@ class TossPaymentClientTests {
         server.expect(requestTo(BASE_URL + "/v1/payments/payment-key"))
                 .andRespond(org.springframework.test.web.client.response
                         .MockRestResponseCreators.withServerError());
+
+        assertThatThrownBy(() -> client.find("payment-key"))
+                .isInstanceOfSatisfying(
+                        BusinessException.class,
+                        exception -> assertThat(exception.getErrorCode())
+                                .isEqualTo(PaymentErrorCode.PAYMENT_STATUS_LOOKUP_FAILED)
+                );
+        server.verify();
+    }
+
+    @Test
+    void find_profileDisabled_rejectsBeforeHttpRequest() {
+        RestClient.Builder builder = RestClient.builder().baseUrl(BASE_URL);
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        TossPaymentClient client = new TossPaymentClient(
+                builder.build(),
+                SECRET_KEY,
+                false);
 
         assertThatThrownBy(() -> client.find("payment-key"))
                 .isInstanceOfSatisfying(

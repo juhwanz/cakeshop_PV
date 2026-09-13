@@ -28,10 +28,12 @@ public class TossPaymentClient {
     private static final String IDEMPOTENCY_KEY = "Idempotency-Key";
 
     private final RestClient restClient;
+    private final boolean enabled;
     private final String authorization;
 
     @Autowired
     public TossPaymentClient(
+            @Value("${app.payment.toss.enabled:false}") boolean enabled,
             @Value("${app.payment.toss.base-url}") String baseUrl,
             @Value("${app.payment.toss.secret-key:}") String secretKey,
             @Value("${app.payment.toss.connect-timeout:3s}") Duration connectTimeout,
@@ -45,12 +47,18 @@ public class TossPaymentClient {
                 .baseUrl(baseUrl)
                 .requestFactory(requestFactory)
                 .build();
-        this.authorization = createAuthorization(secretKey);
+        this.enabled = enabled;
+        this.authorization = enabled ? createAuthorization(secretKey) : null;
     }
 
     TossPaymentClient(RestClient restClient, String secretKey) {
+        this(restClient, secretKey, true);
+    }
+
+    TossPaymentClient(RestClient restClient, String secretKey, boolean enabled) {
         this.restClient = restClient;
-        this.authorization = createAuthorization(secretKey);
+        this.enabled = enabled;
+        this.authorization = enabled ? createAuthorization(secretKey) : null;
     }
 
     /** Toss 결제 승인 API를 호출하고 내부 완료 처리에 필요한 결과만 반환한다. */
@@ -60,7 +68,7 @@ public class TossPaymentClient {
             long amount,
             String idempotencyKey
     ) {
-        if (authorization == null) {
+        if (!enabled || authorization == null) {
             throw new BusinessException(
                     PaymentErrorCode.TOSS_APPROVAL_FAILED
             );
@@ -104,7 +112,8 @@ public class TossPaymentClient {
 
     /** Toss 결제 전체 취소 API를 호출하고 내부 완료 처리에 필요한 결과를 반환한다. */
     public CancellationResult cancel(String paymentKey, String reason, String idempotencyKey) {
-        if (authorization == null
+        if (!enabled
+                || authorization == null
                 || paymentKey == null
                 || paymentKey.isBlank()
                 || reason == null
@@ -148,7 +157,7 @@ public class TossPaymentClient {
 
     /** paymentKey로 Toss의 현재 결제 상태를 조회한다. */
     public Optional<PaymentLookupResult> find(String paymentKey) {
-        if (authorization == null || paymentKey == null || paymentKey.isBlank()) {
+        if (!enabled || authorization == null || paymentKey == null || paymentKey.isBlank()) {
             throw new BusinessException(PaymentErrorCode.PAYMENT_STATUS_LOOKUP_FAILED);
         }
 

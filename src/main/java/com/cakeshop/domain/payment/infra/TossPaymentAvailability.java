@@ -7,13 +7,16 @@ import org.springframework.stereotype.Component;
 @Component
 public class TossPaymentAvailability {
 
+    private final boolean enabled;
     private final String clientKey;
     private final String secretKey;
 
     public TossPaymentAvailability(
+            @Value("${app.payment.toss.enabled:false}") boolean enabled,
             @Value("${app.payment.toss.client-key:}") String clientKey,
             @Value("${app.payment.toss.secret-key:}") String secretKey
     ) {
+        this.enabled = enabled;
         this.clientKey = clientKey;
         this.secretKey = secretKey;
     }
@@ -23,7 +26,7 @@ public class TossPaymentAvailability {
     }
 
     public boolean isEnabled() {
-        return hasText(clientKey) && hasText(secretKey);
+        return enabled && hasText(clientKey) && hasText(secretKey);
     }
 
     private boolean hasText(String value) {
